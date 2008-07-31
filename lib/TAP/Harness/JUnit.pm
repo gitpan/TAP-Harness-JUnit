@@ -35,7 +35,7 @@ use TAP::Parser;
 use XML::Simple;
 use Scalar::Util qw/blessed/;
 
-our $VERSION = '0.1';
+our $VERSION = '0.20';
 
 =head2 new
 
@@ -148,8 +148,18 @@ sub runtests {
 	$ENV{PERL_TEST_HARNESS_DUMP_TAP} = $self->{__rawtapdir};
 	my $aggregator = $self->SUPER::runtests(@files);
 
-	foreach my $file (@files) {
-		$self->parsetest (@{$file});
+	foreach my $test (@files) {
+		my $file;
+		my $comment;
+
+		if (ref $file eq 'ARRAY') {
+			my ($file, $comment) = @{$test};
+		} else {
+			$file = $comment = $test;
+			$comment =~ s/[^a-zA-Z0-9 ]/_/g
+		}
+
+		$self->parsetest ($file, $comment);
 	}
 
 	# Format XML output
