@@ -35,7 +35,7 @@ use TAP::Parser;
 use XML::Simple;
 use Scalar::Util qw/blessed/;
 
-our $VERSION = '0.20';
+our $VERSION = '0.21';
 
 =head2 new
 
@@ -152,12 +152,18 @@ sub runtests {
 		my $file;
 		my $comment;
 
-		if (ref $file eq 'ARRAY') {
-			my ($file, $comment) = @{$test};
+		if (ref $test eq 'ARRAY') {
+			($file, $comment) = @{$test};
 		} else {
-			$file = $comment = $test;
-			$comment =~ s/[^a-zA-Z0-9 ]/_/g
+			$file = $test;
 		}
+		$comment = $file unless defined $comment;
+
+		# Hudson crafts an URL of the test results using the comment verbatim.
+		# Unfortunatelly, they don't escape special characters.
+		# '/'-s and family will result in incorrect URLs.
+		# Filed here: https://hudson.dev.java.net/issues/show_bug.cgi?id=2167
+		$comment =~ s/[^a-zA-Z0-9 ]/_/g;
 
 		$self->parsetest ($file, $comment);
 	}
@@ -166,7 +172,8 @@ sub runtests {
 	my $xs = new XML::Simple;
 	my $xml = $xs->XMLout ($self->{__xml}, RootName => 'testsuites');
 
-	open (XMLFILE, '>'.$self->{__xmlfile});
+	open (XMLFILE, '>'.$self->{__xmlfile})
+		or die $self->{__xmlfile}.': '.$!;
 	print XMLFILE "<?xml version='1.0' encoding='utf-8'?>\n";
 	print XMLFILE $xml;
 	close (XMLFILE);

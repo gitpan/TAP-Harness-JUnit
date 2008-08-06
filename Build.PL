@@ -7,13 +7,14 @@ my $build = Module::Build->new(
 	module_name	=> 'TAP::Harness::JUnit',
 	license		=> 'perl',
 	dist_author	=> 'Lubomir Rintel (Good Data) <lubo.rintel@gooddata.com>',
-	dist_version	=> '0.20',
+	dist_version	=> '0.21',
 	requires	=> {
 		'TAP::Harness'	=> 3.05,
 		'File::Temp'	=> 0,
 		'TAP::Parser'	=> 0,
 		'XML::Simple'	=> 0,
 		'Scalar::Util'	=> 0,
+		'Test::More'	=> 0,
 	},
 );
 
