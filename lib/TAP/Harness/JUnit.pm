@@ -35,7 +35,7 @@ use TAP::Parser;
 use XML::Simple;
 use Scalar::Util qw/blessed/;
 
-our $VERSION = '0.21';
+our $VERSION = '0.22';
 
 =head2 new
 
@@ -94,14 +94,13 @@ sub parsetest {
 
 	my $parser = new TAP::Parser ({'exec' => ['/bin/cat', $self->{__rawtapdir}.'/'.$file]});
 
+	my $tests_run = 0;
 	my $comment = ''; # Comment agreggator
 	while ( my $result = $parser->next ) {
 
 		# Counters
 		if ($result->type eq 'plan') {
 			$xml->{tests} = $result->tests_planned;
-		} elsif ($result->type eq 'test' && $result->ok eq 'not ok') {
-			$xml->{errors}++;
 		}
 
 		# Comments
@@ -109,8 +108,19 @@ sub parsetest {
 			$comment .= $result->comment."\n";
 		}
 
+		# Errors
+		if ($result->type eq 'unknown') {
+			$comment .= $result->raw."\n";
+		}
+
 		# Test case
 		if ($result->type eq 'test') {
+			$tests_run++;
+
+			# JUnit can't express these -- pretend they do not exist
+			$result->directive eq 'TODO' and next;
+			$result->directive eq 'SKIP' and next;
+
 			my $test = {
 				'time' => 0,
 				name => $result->description,
@@ -127,15 +137,31 @@ sub parsetest {
 					message => $result->raw,
 					content => $comment,
 				}];
+				$xml->{errors}++;
 			};
 
 			push @{$xml->{testcase}}, $test;
 			$comment = '';
 		}
 
-
 		# Log
 		$xml->{'system-out'}->[0] .= $result->raw."\n";
+	}
+
+	# Detect bad plan
+	if ($xml->{failures} = $xml->{tests} - $tests_run) {
+		# Fake a failed test
+		push @{$xml->{testcase}}, {
+			'time' => 0,
+			name => 'Test died too soon, some test did not execute.',
+			classname => $name,
+			failure => {
+				type => 'Plan',
+				message => 'Some test were not executed. The test died prematurely.',
+				content => 'Bad plan',
+			},
+		};
+		$xml->{errors}++;
 	}
 
 	# Add this suite to XML
@@ -191,6 +217,19 @@ JUnit XML schema was obtained from L<http://jra1mw.cvs.cern.ch:8180/cgi-bin/jra1
 =head1 ACKNOWLEDGEMENTS
 
 This module was partly inspired by Michael Peters' I<TAP::Harness::Archive>.
+
+=head1 BUGS
+
+Test return value is ignored. This is actually not a bug, I<TAP::Parser> doesn't present
+the fact and TAP specification does not require that anyway.
+
+Test durations are always set to 0 seconds.
+
+The comments that are above the C<ok> or C<not ok> are considered the output
+of the test. This, though being more logical, is against TAP specification.
+
+L<XML::Simple> is used to generate the output. It is suboptimal and involves
+some hacks.
 
 =head1 AUTHOR
 
