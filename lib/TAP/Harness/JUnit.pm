@@ -35,7 +35,7 @@ use TAP::Parser;
 use XML::Simple;
 use Scalar::Util qw/blessed/;
 
-our $VERSION = '0.23';
+our $VERSION = '0.24';
 
 =head2 new
 
@@ -80,6 +80,37 @@ sub new {
 	return $self;
 }
 
+# Add "(number)" at the end of the test name if the test with
+# the same name already exists in XML
+sub uniquename {
+	my $xml = shift;
+	my $name = shift;
+
+	my $newname;
+	my $number = 1;
+
+	# Beautify a bit -- strip leading "- "
+	# (that is added by Test::More)
+	$name =~ s/^[\s-]*//;
+
+	NAME: while (1) {
+		if ($name) {
+			$newname = $name;
+			$newname .= " ($number)" if $number > 1;
+		} else {
+			$newname = "Unnamed test case $number";
+		}
+
+		$number++;
+		foreach my $testcase (@{$xml->{testcase}}) {
+			next NAME if $newname eq $testcase->{name};
+		}
+
+		return $newname;
+	}
+}
+
+# Add a single TAP output file to the XML
 sub parsetest {
 	my $self = shift;
 	my $file = shift;
@@ -112,7 +143,7 @@ sub parsetest {
 			if ($result->comment =~ /Looks like your test died/) {
 				push @{$xml->{testcase}}, {
 					'time' => 0,
-					name => $result->comment,
+					name => uniquename ($xml, 'Test returned failure'),
 					classname => $name,
 					failure => {
 						type => 'Died',
@@ -142,13 +173,9 @@ sub parsetest {
 
 			my $test = {
 				'time' => 0,
-				name => $result->description,
+				name => uniquename ($xml, $result->description),
 				classname => $name,
 			};
-
-			# Beautify a bit -- strip leading "- "
-			# (that is added by Test::More)
-			$test->{name} =~ s/^[\s-]*//;
 
 			if ($result->ok eq 'not ok') {
 				$test->{failure} = [{
@@ -169,10 +196,13 @@ sub parsetest {
 
 	# Detect no plan
 	unless (defined $xml->{tests}) {
+		# Ensure XML will have non-empty value
+		$xml->{tests} = 0;
+
 		# Fake a failed test
 		push @{$xml->{testcase}}, {
 			'time' => 0,
-			name => 'Test died too soon, even before plan.',
+			name => uniquename ($xml, 'Test died too soon, even before plan.'),
 			classname => $name,
 			failure => {
 				type => 'Plan',
@@ -184,19 +214,22 @@ sub parsetest {
 	}
 
 	# Detect bad plan
-	if ($xml->{failures} = $xml->{tests} - $tests_run) {
+	elsif ($xml->{failures} = $xml->{tests} - $tests_run) {
 		# Fake a failed test
 		push @{$xml->{testcase}}, {
 			'time' => 0,
-			name => 'Test died too soon, some test did not execute.',
+			name => uniquename ($xml, 'Number of runned tests does not match plan.'),
 			classname => $name,
 			failure => {
 				type => 'Plan',
-				message => 'Some test were not executed. The test died prematurely.',
+				message => ($xml->{failures} > 0
+					? 'Some test were not executed, The test died prematurely.'
+					: 'Extra tests tun.'),
 				content => 'Bad plan',
 			},
 		};
 		$xml->{errors}++;
+		$xml->{failures} = abs ($xml->{failures});
 	}
 
 	# Add this suite to XML
@@ -224,7 +257,7 @@ sub runtests {
 		# Unfortunatelly, they don't escape special characters.
 		# '/'-s and family will result in incorrect URLs.
 		# Filed here: https://hudson.dev.java.net/issues/show_bug.cgi?id=2167
-		$comment =~ s/[^a-zA-Z0-9 ]/_/g;
+		$comment =~ s/[^a-zA-Z0-9, ]/_/g;
 
 		$self->parsetest ($file, $comment);
 	}
