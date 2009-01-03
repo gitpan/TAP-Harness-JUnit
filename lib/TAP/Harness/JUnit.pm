@@ -17,7 +17,7 @@ TAP::Harness::JUnit - Generate JUnit compatible output from TAP results
 =head1 DESCRIPTION
 
 The only difference between this module and I<TAP::Harness> is that
-this adds mandatory 'xmlfile' argument, that causes the output to
+this adds optional 'xmlfile' argument, that causes the output to
 be formatted into XML in format similar to one that is produced by
 JUnit testing framework.
 
@@ -36,7 +36,7 @@ use XML::Simple;
 use Scalar::Util qw/blessed/;
 use Encode;
 
-our $VERSION = '0.25';
+our $VERSION = '0.26';
 
 =head2 new
 
@@ -46,7 +46,8 @@ These options are added (compared to I<TAP::Harness>):
 
 =item xmlfile
 
-Name of the file XML output will be saved to.
+Name of the file XML output will be saved to.  In case this argument
+is ommited, default of "junit_output.xml" is used and a warning is issued.
 
 =back
 
@@ -57,9 +58,11 @@ sub new {
 	$args ||= {};
 
 	# Process arguments
-	my $xmlfile = $args->{xmlfile} or
-		$class->_croak("'xmlfile' argument is mandatory");
-
+	my $xmlfile;
+	unless ($xmlfile = $args->{xmlfile}) {
+		$xmlfile = 'junit_output.xml';
+		warn 'xmlfile argument not supplied, defaulting to "junit_output.xml"';
+	}
 	defined $args->{merge} or
 		warn 'You should consider using "merge" parameter. See BUGS section of TAP::Harness::JUnit manual';
 
@@ -129,7 +132,12 @@ sub parsetest {
 		'system-out' => [''],
 	};
 
-	my $parser = new TAP::Parser ({'exec' => ['/bin/cat', $self->{__rawtapdir}.'/'.$file]});
+	open (my $tap_handle, $self->{__rawtapdir}.'/'.$file)
+		or die $!;
+	my $rawtap = join ('', <$tap_handle>);
+	close ($tap_handle);
+
+	my $parser = new TAP::Parser ({'tap' => $rawtap });
 
 	my $tests_run = 0;
 	my $comment = ''; # Comment agreggator
@@ -298,6 +306,19 @@ JUnit XML schema was obtained from L<http://jra1mw.cvs.cern.ch:8180/cgi-bin/jra1
 
 This module was partly inspired by Michael Peters' I<TAP::Harness::Archive>.
 
+Following people (in no specific order) have reported problems
+or contributed fixes to I<TAP::Harness::JUnit>:
+
+=over
+
+=item David Ritter
+
+=item Jeff Lavallee
+
+=item Andreas Pohl
+
+=back
+
 =head1 BUGS
 
 Test return value is ignored. This is actually not a bug, I<TAP::Parser> doesn't present
@@ -314,16 +335,22 @@ Test durations are always set to 0 seconds.
 The comments that are above the C<ok> or C<not ok> are considered the output
 of the test. This, though being more logical, is against TAP specification.
 
-L<XML::Simple> is used to generate the output. It is suboptimal and involves
+I<XML::Simple> is used to generate the output. It is suboptimal and involves
 some hacks.
+
+During testing, the resulting files are not tested against the schema, which
+would be a good thing to do.
 
 =head1 AUTHOR
 
 Lubomir Rintel (Good Data) C<< <lubo.rintel@gooddata.com> >>
 
+Source code for I<TAP::Harness::JUnit> is kept in a public GIT repository.
+Visit L<http://repo.or.cz/w/TAP-Harness-JUnit.git> to get it.
+
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2008 Good Data, all rights reserved.
+Copyright 2008, 2009 Good Data, All rights reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
