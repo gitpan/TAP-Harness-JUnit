@@ -37,7 +37,7 @@ use XML::Simple;
 use Scalar::Util qw/blessed/;
 use Encode;
 
-our $VERSION = '0.26';
+our $VERSION = '0.31';
 
 =head2 new
 
@@ -54,6 +54,30 @@ is ommited, default of "junit_output.xml" is used and a warning is issued.
 
 If provided (and true), test case times will not be recorded.
 
+=item namemangle
+
+Specify how to mangle testcase names. This is sometimes required to
+interact with buggy JUnit consumers that lack sufficient validation.
+Available values are:
+
+=over
+
+=item hudson
+
+Replace anything but alphanumeric characters with underscores.
+This is default for historic reasons.
+
+=item perl
+
+Replace slashes in directory hierarchy with dots so that the
+filesystem layout resemble Java class hierarchy.
+
+=item none
+
+Do not do any transformations.
+
+=back
+
 =back
 
 =cut
@@ -64,7 +88,7 @@ sub new {
 
 	# Process arguments
 	my $xmlfile;
-	unless ($xmlfile = $args->{xmlfile}) {
+	unless ($xmlfile = delete $args->{xmlfile}) {
 		$xmlfile = 'junit_output.xml';
 		warn 'xmlfile argument not supplied, defaulting to "junit_output.xml"';
 	}
@@ -75,13 +99,9 @@ sub new {
 	my $rawtapdir = $ENV{PERL_TEST_HARNESS_DUMP_TAP};
 	$rawtapdir = $args->{rawtapdir} unless $rawtapdir;
 	$rawtapdir = File::Temp::tempdir() unless $rawtapdir;
-
-	my $notimes = $args->{notimes};
-
-	# Don't pass these to TAP::Harness
 	delete $args->{rawtapdir};
-	delete $args->{xmlfile};
-	delete $args->{notimes};
+
+	my $notimes = delete $args->{notimes};
 
 	my $self = $class->SUPER::new($args);
 	$self->{__xmlfile} = $xmlfile;
@@ -89,6 +109,11 @@ sub new {
 	$self->{__rawtapdir} = $rawtapdir;
 	$self->{__cleantap} = not defined $ENV{PERL_TEST_HARNESS_DUMP_TAP};
 	$self->{__notimes} = $notimes;
+	if (defined $args->{namemangle}) {
+		$self->{__namemangle} = $args->{namemangle};
+	} else {
+		$self->{__namemangle} = 'hudson';
+	}
 
 	return $self;
 }
@@ -258,6 +283,13 @@ sub parsetest {
 		$xml->{errors}++;
 	}
 
+	# Make up times for sub-tests
+	if ($time) {
+		foreach my $testcase (@{$xml->{testcase}}) {
+			$testcase->{time} = $time / @{$xml->{testcase}};
+		}
+	}
+
 	# Add this suite to XML
 	push @{$self->{__xml}->{testsuite}}, $xml;
 }
@@ -279,11 +311,23 @@ sub runtests {
 		}
 		$comment = $file unless defined $comment;
 
-		# Hudson crafts an URL of the test results using the comment verbatim.
-		# Unfortunatelly, they don't escape special characters.
-		# '/'-s and family will result in incorrect URLs.
-		# Filed here: https://hudson.dev.java.net/issues/show_bug.cgi?id=2167
-		$comment =~ s/[^a-zA-Z0-9, ]/_/g;
+		if ($self->{__namemangle}) {
+			# Older version of hudson crafted an URL of the test
+			# results using the comment verbatim. Unfortunatelly,
+			# they didn't escape special characters, soo '/'-s
+			# and family would result in incorrect URLs.
+			# See hudson bug #2167
+			$self->{__namemangle} eq 'hudson'
+				and $comment =~ s/[^a-zA-Z0-9, ]/_/g;
+
+			# Transform hierarchy of directories into what would
+			# look like hierarchy of classes in Hudson
+			if ($self->{__namemangle} eq 'perl') {
+				$comment =~ s/^[\.\/]*//;
+				$comment =~ s/\./_/g;
+				$comment =~ s/\//./g;
+			}
+		}
 
 		$self->parsetest ($file, $comment, $self->{__notimes} ? 0 : $aggregator->elapsed->[0]);
 	}
@@ -340,7 +384,10 @@ the test dies. Do not do that -- always write a plan! In case it's not possible,
 pass C<merge> argument when creating a I<TAP::Harness::JUnit> instance, and the
 harness will detect such failures by matching certain comments.
 
-Test durations are always set to 0 seconds, but testcase durations are recorded unless the "notimes" parameter is provided (and true).
+Test durations are not mesaured. Unless the "notimes" parameter is provided (and
+true), the test duration is recorded as testcase duration divided by number of
+tests, otherwise it's set to 0 seconds. This could be addressed if the module
+was reimplmented as a formatter.
 
 The comments that are above the C<ok> or C<not ok> are considered the output
 of the test. This, though being more logical, is against TAP specification.
