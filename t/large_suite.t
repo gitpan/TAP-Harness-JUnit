@@ -10,13 +10,7 @@ use File::Basename;
 use Encode;
 
 my %tests = (
-	resultcode	=> 'Successful test with good plan and a bad return code',
-	badplan		=> 'Has a plan, successful tests, just too small amount of them',
-	funkyindent	=> 'Indentation of comments',
-	uniquename	=> 'Multiple tests with identical names',
-	nonutf8log	=> 'Special characters in log',
-	earlyterm	=> 'Bad plan and non-zero return value',
-	empty		=> 'Zero-length output',
+	large_suite	=> 'Large test suite to check for performance problems',
 );
 
 plan tests => 2 * int (keys %tests);

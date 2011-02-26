@@ -37,7 +37,7 @@ use XML::Simple;
 use Scalar::Util qw/blessed/;
 use Encode;
 
-our $VERSION = '0.32';
+our $VERSION = '0.33';
 
 =head2 new
 
@@ -106,17 +106,16 @@ sub new {
 
 	my $notimes = delete $args->{notimes};
 
+  	my $namemangle = delete $args->{namemangle} || 'hudson';
+  
 	my $self = $class->SUPER::new($args);
 	$self->{__xmlfile} = $xmlfile;
 	$self->{__xml} = {testsuite => []};
 	$self->{__rawtapdir} = $rawtapdir;
 	$self->{__cleantap} = not defined $ENV{PERL_TEST_HARNESS_DUMP_TAP};
 	$self->{__notimes} = $notimes;
-	if (defined $args->{namemangle}) {
-		$self->{__namemangle} = $args->{namemangle};
-	} else {
-		$self->{__namemangle} = 'hudson';
-	}
+  	$self->{__namemangle} = $namemangle;
+    $self->{__auto_number} = 1;
 
 	return $self;
 }
@@ -124,31 +123,32 @@ sub new {
 # Add "(number)" at the end of the test name if the test with
 # the same name already exists in XML
 sub uniquename {
-	my $xml = shift;
+	my $self = shift;
+	my $xml  = shift;
 	my $name = shift;
 
 	my $newname;
-	my $number = 1;
 
 	# Beautify a bit -- strip leading "- "
 	# (that is added by Test::More)
 	$name =~ s/^[\s-]*//;
 
-	NAME: while (1) {
-		if ($name) {
-			$newname = $name;
-			$newname .= " ($number)" if $number > 1;
-		} else {
-			$newname = "Unnamed test case $number";
-		}
+	$self->{__test_names} = { map { $_->{name} => 1 } @{ $xml->{testcase} } }
+		unless $self->{__test_names};
 
-		$number++;
-		foreach my $testcase (@{$xml->{testcase}}) {
-			next NAME if $newname eq $testcase->{name};
-		}
+	while(1) {
+        my $number = $self->{__auto_number};
+		$newname = $name
+				 ? $name.($number > 1 ? " ($number)" : '')
+				 : "Unnamed test case $number"
+		;
+		last unless exists $self->{__test_names}->{$newname};
+		$self->{__auto_number}++;
+	};
 
-		return $newname;
-	}
+	$self->{__test_names}->{$newname}++;
+
+	return xmlsafe($newname);
 }
 
 # Add a single TAP output file to the XML
@@ -158,10 +158,11 @@ sub parsetest {
 	my $name = shift;
 	my $parser = shift;
 
-	my $time = $parser->{end_time} - $parser->{start_time};
+	my $time = $parser->end_time - $parser->start_time;
 	$time = 0 if $self->{__notimes};
 
-	my $badretval;
+    # Get the return code of test script before re-parsing the TAP output
+	my $badretval = $parser->exit;
 
 	if ($self->{__namemangle}) {
 		# Older version of hudson crafted an URL of the test
@@ -195,6 +196,8 @@ sub parsetest {
 		or die $!;
 	my $rawtap = join ('', <$tap_handle>);
 	close ($tap_handle);
+	# TAP::Parser refuses to construct a TAP stream from an empty string
+	$rawtap = "\n" unless $rawtap;
 
 	# Reset the parser, so we can reparse the output, iterating through it
 	$parser = new TAP::Parser ({'tap' => $rawtap });
@@ -210,17 +213,17 @@ sub parsetest {
 
 		# Comments
 		if ($result->type eq 'comment') {
-			# See BUGS
-			$badretval = $result if $result->comment =~ /Looks like your test died/;
+			# See BUGS - I think this whole bit can be removed - Ton Voon
+			#$badretval = $result if $result->comment =~ /Looks like your test died/;
 
 			#$comment .= $result->comment."\n";
 			# ->comment has leading whitespace stripped
-			$result->raw =~ /^# (.*)/ and $comment .= $1."\n";
+			$result->raw =~ /^# (.*)/ and $comment .= xmlsafe($1)."\n";
 		}
 
 		# Errors
 		if ($result->type eq 'unknown') {
-			$comment .= $result->raw."\n";
+			$comment .= xmlsafe($result->raw)."\n";
 		}
 
 		# Test case
@@ -233,14 +236,14 @@ sub parsetest {
 
 			my $test = {
 				'time' => 0,
-				name => uniquename ($xml, $result->description),
+				name => $self->uniquename($xml, $result->description),
 				classname => $name,
 			};
 
 			if ($result->ok eq 'not ok') {
 				$test->{failure} = [{
 					type => blessed ($result),
-					message => $result->raw,
+					message => xmlsafe($result->raw),
 					content => $comment,
 				}];
 				$xml->{errors}++;
@@ -251,7 +254,7 @@ sub parsetest {
 		}
 
 		# Log
-		$xml->{'system-out'}->[0] .= $result->raw."\n";
+		$xml->{'system-out'}->[0] .= xmlsafe($result->raw)."\n";
 	}
 
 	# Detect no plan
@@ -262,7 +265,7 @@ sub parsetest {
 		# Fake a failed test
 		push @{$xml->{testcase}}, {
 			'time' => 0,
-			name => uniquename ($xml, 'Test died too soon, even before plan.'),
+			name => $self->uniquename($xml, 'Test died too soon, even before plan.'),
 			classname => $name,
 			failure => {
 				type => 'Plan',
@@ -278,7 +281,7 @@ sub parsetest {
 		# Fake a failed test
 		push @{$xml->{testcase}}, {
 			'time' => 0,
-			name => uniquename ($xml, 'Number of runned tests does not match plan.'),
+			name => $self->uniquename($xml, 'Number of runned tests does not match plan.'),
 			classname => $name,
 			failure => {
 				type => 'Plan',
@@ -293,19 +296,21 @@ sub parsetest {
 	}
 
 	# Bad return value. See BUGS
-	elsif ($badretval and not $xml->{errors}) {
+	#elsif ($badretval and not $xml->{errors}) {
+	elsif ($badretval) {
 		# Fake a failed test
 		push @{$xml->{testcase}}, {
 			'time' => 0,
-			name => uniquename ($xml, 'Test returned failure'),
+			name => $self->uniquename($xml, 'Test returned failure'),
 			classname => $name,
 			failure => {
 				type => 'Died',
-				message => $badretval->comment,
-				content => $badretval->raw,
+  				message => "Test died with return code $badretval",
+  				content => "Test died with return code $badretval",
 			},
 		};
 		$xml->{errors}++;
+  		$xml->{tests}++;
 	}
 
 	# Make up times for sub-tests
@@ -360,6 +365,21 @@ sub runtests {
 	return $aggregator;
 }
 
+# Because not all utf8 characters are allowed in xml, only these
+#    Char       ::=      #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
+# http://www.w3.org/TR/REC-xml/#NT-Char
+sub xmlsafe {
+    my $s = shift;
+
+    return '' unless defined $s && length($s) > 0;
+
+    $s =~ s/([\x01|\x02|\x03|\x04|\x05|\x06|\x07|\x08|\x0B|\x0C|\x0E|\x0F|\x11|\x12|\x13|\x14|\x15|\x16|\x17|\x18|\x19|\x1A|\x1B|\x1C|\x1D|\x1E|\x1F])/ sprintf("<%0.2x>", ord($1)) /gex;
+
+
+    return $s;
+}
+
+
 =head1 SEE ALSO
 
 JUnit XML schema was obtained from L<http://jra1mw.cvs.cern.ch:8180/cgi-bin/jra1mw.cgi/org.glite.testing.unit/config/JUnitXSchema.xsd?view=markup>.
@@ -367,9 +387,12 @@ JUnit XML schema was obtained from L<http://jra1mw.cvs.cern.ch:8180/cgi-bin/jra1
 =head1 ACKNOWLEDGEMENTS
 
 This module was partly inspired by Michael Peters' I<TAP::Harness::Archive>.
+It was originally written by Lubomir Rintel (GoodData)
+C<< <lubo.rintel@gooddata.com> >> and includes code from several
+contributors.
 
 Following people (in no specific order) have reported problems
-or contributed fixes to I<TAP::Harness::JUnit>:
+or contributed code to I<TAP::Harness::JUnit>:
 
 =over
 
@@ -406,16 +429,18 @@ some hacks.
 During testing, the resulting files are not tested against the schema, which
 would be a good thing to do.
 
-=head1 AUTHOR
-
-Lubomir Rintel (Good Data) C<< <lubo.rintel@gooddata.com> >>
+=head1 CONTRIBUTING
 
 Source code for I<TAP::Harness::JUnit> is kept in a public GIT repository.
-Visit L<http://repo.or.cz/w/TAP-Harness-JUnit.git> to get it.
+Visit L<https://github.com/jlavallee/tap-harness-junit>.
+
+Bugs reports and feature enhancement requests are tracked at
+L<https://rt.cpan.org/Public/Dist/Display.html?Name=TAP-Harness-JUnit>.
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2008, 2009 Good Data, All rights reserved.
+Copyright 2008, 2009, 2010, 2011 I<TAP::Harness::JUnit> contributors.
+All rights reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
