@@ -37,7 +37,7 @@ use XML::Simple;
 use Scalar::Util qw/blessed/;
 use Encode;
 
-our $VERSION = '0.33';
+our $VERSION = '0.34';
 
 =head2 new
 
@@ -49,6 +49,9 @@ These options are added (compared to I<TAP::Harness>):
 
 Name of the file XML output will be saved to.  In case this argument
 is ommited, default of "junit_output.xml" is used and a warning is issued.
+
+Alternatively, the name of the output file can be specified in the 
+$JUNIT_OUTPUT_FILE environment variable
 
 =item notimes (DEPRECATED)
 
@@ -81,7 +84,10 @@ Do not do any transformations.
 
 =back
 
-=back
+=head1 ENVIRONMENT VARIABLES
+
+The name of the output file can be specified in the $JUNIT_OUTPUT_FILE 
+environment variable
 
 =cut
 
@@ -90,8 +96,9 @@ sub new {
 	$args ||= {};
 
 	# Process arguments
-	my $xmlfile;
-	unless ($xmlfile = delete $args->{xmlfile}) {
+	my $xmlfile = delete $args->{xmlfile};
+	$xmlfile = $ENV{JUNIT_OUTPUT_FILE} unless defined $xmlfile;
+	unless($xmlfile) {
 		$xmlfile = 'junit_output.xml';
 		warn 'xmlfile argument not supplied, defaulting to "junit_output.xml"';
 	}
@@ -213,11 +220,6 @@ sub parsetest {
 
 		# Comments
 		if ($result->type eq 'comment') {
-			# See BUGS - I think this whole bit can be removed - Ton Voon
-			#$badretval = $result if $result->comment =~ /Looks like your test died/;
-
-			#$comment .= $result->comment."\n";
-			# ->comment has leading whitespace stripped
 			$result->raw =~ /^# (.*)/ and $comment .= xmlsafe($1)."\n";
 		}
 
@@ -401,6 +403,11 @@ or contributed code to I<TAP::Harness::JUnit>:
 =item Jeff Lavallee
 
 =item Andreas Pohl
+
+=item Ton Voon
+
+=item Kevin Goess
+
 
 =back
 
