@@ -37,7 +37,7 @@ use XML::Simple;
 use Scalar::Util qw/blessed/;
 use Encode;
 
-our $VERSION = '0.34';
+our $VERSION = '0.35';
 
 =head2 new
 
@@ -298,8 +298,7 @@ sub parsetest {
 	}
 
 	# Bad return value. See BUGS
-	#elsif ($badretval and not $xml->{errors}) {
-	elsif ($badretval) {
+	elsif ($badretval and not $xml->{errors}) {
 		# Fake a failed test
 		push @{$xml->{testcase}}, {
 			'time' => 0,
