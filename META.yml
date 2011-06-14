@@ -6,7 +6,7 @@ build_requires:
   Test::Deep: 0
 configure_requires:
   Module::Build: 0.36
-generated_by: 'Module::Build version 0.3607'
+generated_by: 'Module::Build version 0.3603'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -15,7 +15,9 @@ name: TAP-Harness-JUnit
 provides:
   TAP::Harness::JUnit:
     file: lib/TAP/Harness/JUnit.pm
-    version: 0.35
+    version: 0.36
+  TAP::Harness::JUnit::Parser:
+    file: lib/TAP/Harness/JUnit.pm
 requires:
   Encode: 0
   File::Temp: 0
@@ -28,4 +30,4 @@ resources:
   bugtracker: http://rt.cpan.org/NoAuth/Bugs.html?Dist=TAP-Harness-JUnit
   license: http://dev.perl.org/licenses/
   repository: https://github.com/jlavallee/tap-harness-junit
-version: 0.35
+version: 0.36
