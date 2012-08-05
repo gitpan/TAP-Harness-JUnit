@@ -15,7 +15,7 @@ name: TAP-Harness-JUnit
 provides:
   TAP::Harness::JUnit:
     file: lib/TAP/Harness/JUnit.pm
-    version: 0.36
+    version: 0.37
   TAP::Harness::JUnit::Parser:
     file: lib/TAP/Harness/JUnit.pm
 requires:
@@ -30,4 +30,4 @@ resources:
   bugtracker: http://rt.cpan.org/NoAuth/Bugs.html?Dist=TAP-Harness-JUnit
   license: http://dev.perl.org/licenses/
   repository: https://github.com/jlavallee/tap-harness-junit
-version: 0.36
+version: 0.37
