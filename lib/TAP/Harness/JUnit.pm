@@ -11,20 +11,20 @@ TAP::Harness::JUnit - Generate JUnit compatible output from TAP results
     my $harness = TAP::Harness::JUnit->new({
         xmlfile => 'output.xml',
         package => 'database',
-    	...
+        # ...
     });
     $harness->runtests(@tests);
 
 =head1 DESCRIPTION
 
-The only difference between this module and I<TAP::Harness> is that
-this adds two optional arguments: 'xmlfile' and 'package', that cause 
-the output to be formatted into XML in format similar to one that is 
+The only difference between this module and I<TAP::Harness> is that this module
+adds the optional arguments 'xmlfile', 'package', and 'namemangle' that cause
+the output to be formatted into XML in a format similar to the one that is
 produced by the JUnit testing framework.
 
 =head1 METHODS
 
-This modules inherits all functions from I<TAP::Harness>.
+This module inherits all functions from I<TAP::Harness>.
 
 =cut
 
@@ -38,7 +38,7 @@ use XML::Simple;
 use Scalar::Util qw/blessed/;
 use Encode;
 
-our $VERSION = '0.40';
+our $VERSION = '0.41';
 
 =head2 new
 
@@ -48,10 +48,10 @@ These options are added (compared to I<TAP::Harness>):
 
 =item xmlfile
 
-Name of the file XML output will be saved to.  In case this argument
-is ommited, default of "junit_output.xml" is used and a warning is issued.
+Name of the file XML output will be saved to. If this argument is omitted, the
+default of "junit_output.xml" is used and a warning is issued.
 
-Alternatively, the name of the output file can be specified in the 
+Alternatively, the name of the output file can be specified in the
 $JUNIT_OUTPUT_FILE environment variable
 
 =item package
@@ -60,7 +60,7 @@ The Hudson/Jenkins continuous-integration systems support separating test
 results into "packages". By default any number of output xml files will be
 merged into the default package "(root)".
 
-Setting a package-name will place all test results from the current run into
+Setting a package name will place all test results from the current run into
 that package. You can also set the environment variable $JUNIT_PACKAGE to do
 the same.
 
@@ -70,28 +70,31 @@ If provided (and true), test case times will not be recorded.
 
 =item namemangle
 
-Specify how to mangle testcase names. This is sometimes required to
-interact with buggy JUnit consumers that lack sufficient validation.
+Specify how to mangle testcase names. This is sometimes required to interact
+with buggy JUnit consumers that lack sufficient validation.
+
+Alternatively, this value can be set in the environment variable
+$JUNIT_NAME_MANGLE.
+
 Available values are:
 
 =over
 
 =item hudson
 
-Replace anything but alphanumeric characters with underscores.
-This is default for historic reasons.
+Replace anything but alphanumeric characters with underscores. This is the
+default for historic reasons.
 
 =item perl (RECOMMENDED)
 
-Replace slashes in directory hierarchy with dots so that the
-filesystem layout resemble Java class hierarchy.
+Replace slashes in the directory hierarchy with dots so that the filesystem
+layout resembles a Java class hierarchy.
 
-This is the recommended setting and may become a default in
-future.
+This is the recommended setting and may become the default in future.
 
 =item none
 
-Do not do any transformations.
+Do not perform any transformations.
 
 =back
 
@@ -99,11 +102,14 @@ Do not do any transformations.
 
 =head1 ENVIRONMENT VARIABLES
 
-The name of the output file can be specified in the $JUNIT_OUTPUT_FILE 
+The name of the output file can be specified in the $JUNIT_OUTPUT_FILE
 environment variable
 
-The package name that Hudson/Jenkins use to categorise test results can
-be specified in $JUNIT_PACKAGE.
+The package name that Hudson/Jenkins use to categorise test results can be
+specified in $JUNIT_PACKAGE.
+
+The name mangling mechanism used to rewrite test names can be specified in
+$JUNIT_NAME_MANGLE. (See namemangle documentation for available values.)
 
 =cut
 
@@ -114,7 +120,7 @@ sub new {
 	# Process arguments
 	my $xmlfile = delete $args->{xmlfile};
 	$xmlfile = $ENV{JUNIT_OUTPUT_FILE} unless defined $xmlfile;
-	unless($xmlfile) {
+	unless ($xmlfile) {
 		$xmlfile = 'junit_output.xml';
 		warn 'xmlfile argument not supplied, defaulting to "junit_output.xml"';
 	}
@@ -130,8 +136,12 @@ sub new {
 
 	my $notimes = delete $args->{notimes};
 
-  	my $namemangle = delete $args->{namemangle} || 'hudson';
-  
+	my $namemangle = delete $args->{namemangle};
+	$namemangle = $ENV{JUNIT_NAME_MANGLE} unless defined $namemangle;
+	unless ($namemangle) {
+		$namemangle = 'hudson';
+	}
+
 	my $self = $class->SUPER::new($args);
 	$self->{__xmlfile} = $xmlfile;
 	$self->{__xml} = {testsuite => []};
@@ -139,8 +149,8 @@ sub new {
 	$self->{__rawtapdir} = $rawtapdir;
 	$self->{__cleantap} = not defined $ENV{PERL_TEST_HARNESS_DUMP_TAP};
 	$self->{__notimes} = $notimes;
-  	$self->{__namemangle} = $namemangle;
-    $self->{__auto_number} = 1;
+	$self->{__namemangle} = $namemangle;
+	$self->{__auto_number} = 1;
 
 	# Inject our parser, that persists results for later
 	# consumption and adds timing information
@@ -167,7 +177,7 @@ sub uniquename {
 		unless $self->{__test_names};
 
 	while(1) {
-        my $number = $self->{__auto_number};
+		my $number = $self->{__auto_number};
 		$newname = $name
 				 ? $name.($number > 1 ? " ($number)" : '')
 				 : "Unnamed test case $number"
@@ -190,7 +200,7 @@ sub parsetest {
 	my $time = $parser->end_time - $parser->start_time;
 	$time = 0 if $self->{__notimes};
 
-    # Get the return code of test script before re-parsing the TAP output
+	# Get the return code of test script before re-parsing the TAP output
 	my $badretval = $parser->exit;
 
 	if ($self->{__namemangle}) {
@@ -326,12 +336,12 @@ sub parsetest {
 			classname => $prefixname,
 			failure => {
 				type => 'Died',
-  				message => "Test died with return code $badretval",
-  				content => "Test died with return code $badretval",
+				message => "Test died with return code $badretval",
+				content => "Test died with return code $badretval",
 			},
 		};
 		$xml->{errors}++;
-  		$xml->{tests}++;
+		$xml->{tests}++;
 	}
 
 	# Add this suite to XML
@@ -371,14 +381,14 @@ sub runtests {
 #    Char       ::=      #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
 # http://www.w3.org/TR/REC-xml/#NT-Char
 sub xmlsafe {
-    my $s = shift;
+	my $s = shift;
 
-    return '' unless defined $s && length($s) > 0;
+	return '' unless defined $s && length($s) > 0;
 
-    $s =~ s/([\x01|\x02|\x03|\x04|\x05|\x06|\x07|\x08|\x0B|\x0C|\x0E|\x0F|\x11|\x12|\x13|\x14|\x15|\x16|\x17|\x18|\x19|\x1A|\x1B|\x1C|\x1D|\x1E|\x1F])/ sprintf("<%0.2x>", ord($1)) /gex;
+	$s =~ s/([\x01|\x02|\x03|\x04|\x05|\x06|\x07|\x08|\x0B|\x0C|\x0E|\x0F|\x11|\x12|\x13|\x14|\x15|\x16|\x17|\x18|\x19|\x1A|\x1B|\x1C|\x1D|\x1E|\x1F])/ sprintf("<%0.2x>", ord($1)) /gex;
 
 
-    return $s;
+	return $s;
 }
 
 # This is meant to transparently extend the parser chosen by user.
@@ -413,17 +423,17 @@ sub next
 
 =head1 SEE ALSO
 
-JUnit XML schema was obtained from L<http://jra1mw.cvs.cern.ch:8180/cgi-bin/jra1mw.cgi/org.glite.testing.unit/config/JUnitXSchema.xsd?view=markup>.
+The JUnit XML schema was obtained from
+L<http://jra1mw.cvs.cern.ch:8180/cgi-bin/jra1mw.cgi/org.glite.testing.unit/config/JUnitXSchema.xsd?view=markup>.
 
 =head1 ACKNOWLEDGEMENTS
 
-This module was partly inspired by Michael Peters' I<TAP::Harness::Archive>.
+This module was partly inspired by Michael Peters's I<TAP::Harness::Archive>.
 It was originally written by Lubomir Rintel (GoodData)
-C<< <lubo.rintel@gooddata.com> >> and includes code from several
-contributors.
+C<< <lubo.rintel@gooddata.com> >> and includes code from several contributors.
 
-Following people (in no specific order) have reported problems
-or contributed code to I<TAP::Harness::JUnit>:
+The following people (in no specific order) have reported problems or
+contributed code to I<TAP::Harness::JUnit>:
 
 =over
 
@@ -443,35 +453,36 @@ or contributed code to I<TAP::Harness::JUnit>:
 
 =item Malcolm Parsons
 
+=item Finn Smith
 
 =back
 
 =head1 BUGS
 
-The comments that are above the C<ok> or C<not ok> are considered the output
-of the test. This, though being more logical, is against TAP specification.
+The comments that are above the C<ok> or C<not ok> are considered the output of
+the test. This, though being more logical, is against TAP specification.
 
-I<XML::Simple> is used to generate the output. It is suboptimal and involves
+I<XML::Simple> is used to generate the output. This is suboptimal and involves
 some hacks.
 
-During testing, the resulting files are not tested against the schema, which
+During testing the resulting files are not tested against the schema. This
 would be a good thing to do.
 
 =head1 CONTRIBUTING
 
-Source code for I<TAP::Harness::JUnit> is kept in a public GIT repository.
+Source code for I<TAP::Harness::JUnit> is kept in a public Git repository.
 Visit L<https://github.com/jlavallee/tap-harness-junit>.
 
-Bugs reports and feature enhancement requests are tracked at
+Bug reports and feature enhancement requests are tracked at
 L<https://rt.cpan.org/Public/Dist/Display.html?Name=TAP-Harness-JUnit>.
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2008, 2009, 2010, 2011 I<TAP::Harness::JUnit> contributors.
-All rights reserved.
+Copyright 2008, 2009, 2010, 2011, 2012, 2013 I<TAP::Harness::JUnit>
+contributors. All rights reserved.
 
-This program is free software; you can redistribute it and/or modify it
-under the same terms as Perl itself.
+This program is free software; you can redistribute it and/or modify it under
+the same terms as Perl itself.
 
 =cut
 
